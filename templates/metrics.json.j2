@@ -1,0 +1,11 @@
+{
+  "hostname": "{{ inventory_hostname }}",
+  "instance_id": "{{ ansible_ec2_instance_id | default('n/a') }}",
+  "cpu_vcpus": "{{ ansible_facts.processor_vcpus | default('n/a') }}",
+  "mem_total_mb": "{{ ansible_memtotal_mb | default('n/a') }}",
+  "mem_free_mb": "{{ ansible_memfree_mb | default('n/a') }}",
+  "disk_root_total_gb": "{{ (ansible_facts.mounts | selectattr('mount','equalto','/') | map(attribute='size_total') | list | first | default(0)) | int // (1024**3) }}",
+  "disk_root_used_gb": "{{ ((ansible_facts.mounts | selectattr('mount','equalto','/') | map(attribute='size_total') | list | first | default(0)) - (ansible_facts.mounts | selectattr('mount','equalto','/') | map(attribute='size_available') | list | first | default(0))) | int // (1024**3) }}",
+  "timestamp": "{{ ansible_date_time.iso8601 }}"
+}
+

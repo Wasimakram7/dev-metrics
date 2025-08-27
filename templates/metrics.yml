@@ -1,0 +1,50 @@
+- name: Collect & mail metrics
+  hosts: all
+  gather_facts: yes
+  become: true
+
+  vars:
+    metrics_remote_path: "/tmp/metrics-{{ inventory_hostname }}.json"
+    metrics_local_dir: "./artifacts"
+
+  tasks:
+    # If you already render metrics.json via your existing template, keep that.
+    - name: Render metrics JSON from template
+      template:
+        src: templates/metrics.json.j2
+        dest: "{{ metrics_remote_path }}"
+        mode: '0644'
+
+    - name: Create local artifacts dir
+      delegate_to: localhost
+      run_once: true
+      file:
+        path: "{{ metrics_local_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Fetch metrics to control node
+      fetch:
+        src: "{{ metrics_remote_path }}"
+        dest: "{{ metrics_local_dir }}/{{ inventory_hostname }}.json"
+        flat: true
+
+    - name: Send metrics email from control node
+      delegate_to: localhost
+      run_once: true
+      environment:
+        SMTP_HOST: "{{ lookup('env','SMTP_HOST') | default('smtp.gmail.com') }}"
+        SMTP_PORT: "{{ lookup('env','SMTP_PORT') | default('587') }}"
+        SMTP_USER: "{{ lookup('env','SMTP_USER') }}"
+        SMTP_PASS: "{{ lookup('env','SMTP_PASS') }}"
+        MAIL_FROM:  "{{ lookup('env','MAIL_FROM')  }}"
+        MAIL_TO:    "{{ lookup('env','MAIL_TO')    }}"
+        SUBJECT:    "{{ lookup('env','SUBJECT')    | default('EC2 Metrics Report') }}"
+        METRICS_DIR: "{{ metrics_local_dir }}"
+      vars:
+        mailer: "./send_metrics_email.py"
+      args:
+        chdir: "{{ playbook_dir }}"
+      command: >
+        python3 {{ mailer }}
+

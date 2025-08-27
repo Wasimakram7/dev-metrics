@@ -1,0 +1,12 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - eu-north-1
+profile: "{{ lookup('env','AWS_PROFILE') | default('default', true) }}"
+filters:
+  instance-state-name: running
+hostnames:
+  - tag:Name
+compose:
+  ansible_host: public_ip_address
+strict: False
+

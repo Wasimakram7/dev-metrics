@@ -1,0 +1,17 @@
+cat > .gitignore <<'EOF'
+# Keys
+*.pem
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Ansible runtime
+artifacts/
+cron.log
+
+# Secrets
+.env
+smtp_vars.yml
+EOF
+

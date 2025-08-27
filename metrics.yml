@@ -1,0 +1,78 @@
+---
+- name: Collect & mail metrics
+  hosts: all
+  become: true
+  gather_facts: yes
+
+  vars:
+    metrics_remote_path: "/tmp/metrics-{{ inventory_hostname }}.json"
+    metrics_local_dir: "{{ playbook_dir }}/artifacts"
+    mailer_path: "{{ playbook_dir }}/send_metrics_email.py"
+
+  tasks:
+    - name: Ensure helpful tools (best-effort)
+      package:
+        name:
+          - sysstat
+          - procps
+          - python3
+        state: present
+      ignore_errors: true
+
+    - name: CPU load (1/5/15) best-effort
+      shell: "uptime | awk -F'load average: ' '{print $2}' | tr -d ','"
+      register: loadavg_cmd
+      changed_when: false
+      failed_when: false
+
+    - name: Capture primary IP (best-effort)
+      command: hostname -I
+      register: host_ips
+      changed_when: false
+      failed_when: false
+
+    - name: Derive a few metrics from gathered facts
+      set_fact:
+        fact_primary_ip: "{{ (host_ips.stdout.split() | first) | default(ansible_default_ipv4.address, true) }}"
+        fact_cpu_vcpus: "{{ ansible_facts.processor_vcpus | default('n/a') }}"
+        fact_mem_total_mb: "{{ ansible_memtotal_mb | default('n/a') }}"
+        fact_mem_free_mb: "{{ ansible_memfree_mb | default('n/a') }}"
+        fact_loadavg: "{{ (loadavg_cmd.stdout | default('')) if (loadavg_cmd.stdout | default('')) else 'n/a' }}"
+
+    - name: Render per-host metrics JSON (on each EC2)
+      template:
+        src: templates/metrics.json.j2
+        dest: "{{ metrics_remote_path }}"
+        mode: '0644'
+
+    - name: Create local artifacts dir
+      delegate_to: localhost
+      run_once: true
+      file:
+        path: "{{ metrics_local_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Fetch metrics to control node
+      fetch:
+        src: "{{ metrics_remote_path }}"
+        dest: "{{ metrics_local_dir }}/{{ inventory_hostname }}.json"
+        flat: true
+
+    - name: Email metrics summary + attachments
+      delegate_to: localhost
+      run_once: true
+      environment:
+        SMTP_HOST: "{{ lookup('env','SMTP_HOST') | default('smtp.gmail.com') }}"
+        SMTP_PORT: "{{ lookup('env','SMTP_PORT') | default('587') }}"
+        SMTP_USER: "{{ lookup('env','SMTP_USER') }}"
+        SMTP_PASS: "{{ lookup('env','SMTP_PASS') }}"
+        MAIL_FROM:  "{{ lookup('env','MAIL_FROM') }}"
+        MAIL_TO:    "{{ lookup('env','MAIL_TO') }}"
+        SUBJECT:    "{{ lookup('env','SUBJECT') | default('EC2 Metrics Report') }}"
+        METRICS_DIR: "{{ metrics_local_dir }}"
+      command: >
+        python3 {{ mailer_path }}
+
